@@ -2,6 +2,7 @@
 from browser import Browser
 import json, time
 from datetime import datetime
+from datetime import timedelta
 import cv2
 
 venueUrl = {
@@ -87,6 +88,13 @@ class PKUVenue():
 		for req in reqList:
 			orderDate = req.split(" ")[0]
 			orderTime = req.split(" ")[1]
+			if len(orderDate) < 2:
+				try:
+					dayDelta = int(orderDate)
+				except:
+					print("配置文件出错：请按格式输入预定时间")
+					dayDelta = 3
+				orderDate = (datetime.now()+timedelta(days = dayDelta)).strftime("%Y-%m-%d")
 			if orderDate in reqDict.keys():
 				reqDict[orderDate].append(orderTime)
 			else:
@@ -181,6 +189,64 @@ class PKUVenue():
 
 		return orderEnable
 
+	def __makeOrderDay(self, sportsName, timeList, courtPriorityList, courtIndexDict, orderDate, orderTimeList):
+		orderEnable = False
+		currentPageIndex = 0
+		pageJumpButtonIndex = [None, 6, 2]
+
+		self.browser.gotoPage(venueUrl[sportsName])
+		self.__jumpToDate(orderDate)
+		print("selecting date %s ........." % orderDate)
+		courtSelected = 0
+
+		for court in courtPriorityList:
+			courtPageIndex = courtIndexDict[court]["page"]
+			courtTableColumn = courtIndexDict[court]["column"]
+
+			# judge whether jump page or not
+			pageDelta = courtPageIndex - currentPageIndex
+			jumpDirection = 1 if pageDelta > 0 else -1
+			for _ in range(0, pageDelta, jumpDirection):
+				self.browser.clickByXPath("/html/body/div[1]/div/div/div[3]/div[2]/div/div[2]/div[3]/div[1]/div/div/div/div/div/table/thead/tr/td[%d]/div/span/i" % pageJumpButtonIndex[jumpDirection])
+				currentPageIndex += jumpDirection
+
+			# select court block
+			currentOrder = []
+			for ot in orderTimeList:
+				timeTableRow = timeList.index(ot)+1
+				courtBlockElment = self.browser.findElementByXPath("/html/body/div[1]/div/div/div[3]/div[2]/div/div[2]/div[3]/div[1]/div/div/div/div/div/table/tbody/tr[%d]/td[%d]/div" % (
+					timeTableRow, courtTableColumn + 1
+					))
+
+				if "free" not in courtBlockElment.get_attribute('class'):
+					continue
+
+				courtSelected = 1
+				currentOrder = ["%s %s %s %s" % (sportsName, orderDate, timeList[timeTableRow - 1], court)]
+				courtBlockElment.click()
+
+				if timeTableRow == len(timeList):
+					continue
+				
+				courtBlockElmentNext = self.browser.findElementByXPath("/html/body/div[1]/div/div/div[3]/div[2]/div/div[2]/div[3]/div[1]/div/div/div/div/div/table/tbody/tr[%d]/td[%d]/div" % (
+					timeTableRow + 1, courtTableColumn + 1
+					))
+
+				if "free" in courtBlockElmentNext.get_attribute('class'):
+					courtBlockElmentNext.click()
+					courtSelected = 2
+					currentOrder.append("%s %s %s %s" % (sportsName, orderDate, timeList[timeTableRow], court))
+					break
+
+		if courtSelected == 0:
+			self.orderStatement.append("%s %s %s %s" % (sportsName, orderDate, ot, "无场"))
+			print("without court left at %s %s" % (orderDate, ot))
+		else:
+			self.orderStatemen += currentOrder
+			orderEnable = True
+
+		return orderEnable
+
 	def login(self):
 		self.browser.gotoPage("https://epe.pku.edu.cn/ggtypt/login?service=https://epe.pku.edu.cn/venue-server/loginto")
 		print("trying to login ......")
@@ -198,6 +264,9 @@ class PKUVenue():
 
 		reqDict = self.__reqListToDict(reqList)
 		for orderDate in reqDict:
+			# if self.__makeOrderDay(sportsName, timeList[sportsName], courtPriorityList[sportsName], courtIndexDict[sportsName], orderDate, reqDict[orderDate]):
+			#  	self.__submitOrder()
+			
 			for i in range(0, len(reqDict[orderDate]), 2):
 				self.browser.gotoPage(venueUrl[sportsName])
 				self.__jumpToDate(orderDate)
@@ -217,12 +286,23 @@ def main():
 	with open("config.json", "r", encoding="utf8") as f:
 		config = json.load(f)
 
+	# waiting until logintime
+	now = datetime.now()
+	logintime = datetime.strptime(config["logintime"], "%H:%M:%S").replace(
+		year=now.year, month= now.month, day= now.day
+	)
+	if (logintime - now).total_seconds() > 0:
+		print("程序将在" + datetime.strftime(logintime, "%H:%M:%S") + "启动...\n")
+		time.sleep((logintime - now).total_seconds())
+
 	pkuvenue = PKUVenue(config["user_info"])
 	pkuvenue.login()
 
 	# waiting until rushtime
 	now = datetime.now()
-	rushtime = datetime.strptime(config["rushtime"], "%Y-%m-%d %H:%M:%S")
+	rushtime = datetime.strptime(config["rushtime"], "%H:%M:%S").replace(
+		year=now.year, month= now.month, day= now.day
+	)
 	if (rushtime - now).total_seconds() > 0:
 		time.sleep((rushtime - now).total_seconds())
 
