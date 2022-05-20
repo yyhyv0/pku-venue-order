@@ -1,4 +1,5 @@
 # -*- coding: utf-8
+from asyncio.windows_events import NULL
 from browser import Browser
 import json, time
 from datetime import datetime
@@ -21,7 +22,7 @@ timeList = {
 }
 
 courtPriorityList = {
-	"羽毛球":["3号", "4号", "9号", "10号", "1号", "2号", "5号", "6号", "7号", "8号", "11号", "12号"],
+	"羽毛球":["5号", "6号", "7号", "8号","3号", "4号", "9号", "10号", "1号", "2号",  "11号", "12号"],
 	"篮球":["北1", "南1", "北2", "南2"],
 	"台球":["3号", "4号", "9号", "10号", "1号", "2号", "5号", "13号", "7号", "8号", "11号", "12号"]
 }
@@ -197,7 +198,7 @@ class PKUVenue():
 		self.browser.gotoPage(venueUrl[sportsName])
 		self.__jumpToDate(orderDate)
 		print("selecting date %s ........." % orderDate)
-		courtSelected = 0
+		currentSelect = []
 
 		for court in courtPriorityList:
 			courtPageIndex = courtIndexDict[court]["page"]
@@ -210,8 +211,9 @@ class PKUVenue():
 				self.browser.clickByXPath("/html/body/div[1]/div/div/div[3]/div[2]/div/div[2]/div[3]/div[1]/div/div/div/div/div/table/thead/tr/td[%d]/div/span/i" % pageJumpButtonIndex[jumpDirection])
 				currentPageIndex += jumpDirection
 
-			# select court block
+			# find connected time block
 			currentOrder = []
+			last = NULL
 			for ot in orderTimeList:
 				timeTableRow = timeList.index(ot)+1
 				courtBlockElment = self.browser.findElementByXPath("/html/body/div[1]/div/div/div[3]/div[2]/div/div[2]/div[3]/div[1]/div/div/div/div/div/table/tbody/tr[%d]/td[%d]/div" % (
@@ -219,31 +221,38 @@ class PKUVenue():
 					))
 
 				if "free" not in courtBlockElment.get_attribute('class'):
+					last = NULL
 					continue
+				else:
+					cur = [courtBlockElment,ot]
+					if currentOrder == []:
+						currentOrder.append(cur)
+					if last != NULL:
+						currentOrder = [last, cur]
+						break
+					last = cur
 
-				courtSelected = 1
-				currentOrder = ["%s %s %s %s" % (sportsName, orderDate, timeList[timeTableRow - 1], court)]
-				courtBlockElment.click()
+			if len(currentOrder) == 2:
+				currentSelect = []
+				for ele in currentOrder:
+					ele[0].click()
+					currentSelect.append("%s %s %s %s" % (sportsName, orderDate, ele[1], court))
+				orderEnable = True
+				break
 
-				if timeTableRow == len(timeList):
-					continue
-				
-				courtBlockElmentNext = self.browser.findElementByXPath("/html/body/div[1]/div/div/div[3]/div[2]/div/div[2]/div[3]/div[1]/div/div/div/div/div/table/tbody/tr[%d]/td[%d]/div" % (
-					timeTableRow + 1, courtTableColumn + 1
-					))
+			if orderEnable == False and len(currentOrder) != 0:
+				currentSelect = []
+				for ele in currentOrder:
+					ele[0].click()
+					currentSelect.append("%s %s %s %s" % (sportsName, orderDate, ele[1], court))
+				orderEnable = True
 
-				if "free" in courtBlockElmentNext.get_attribute('class'):
-					courtBlockElmentNext.click()
-					courtSelected = 2
-					currentOrder.append("%s %s %s %s" % (sportsName, orderDate, timeList[timeTableRow], court))
-					break
-
-		if courtSelected == 0:
-			self.orderStatement.append("%s %s %s %s" % (sportsName, orderDate, ot, "无场"))
-			print("without court left at %s %s" % (orderDate, ot))
+		if orderEnable:
+			self.orderStatement+=currentSelect
 		else:
-			self.orderStatemen += currentOrder
-			orderEnable = True
+			for ot in orderTimeList:
+				self.orderStatement.append("%s %s %s %s" % (sportsName, orderDate, ot, "无场"))
+			print("without court left at %s" % (orderDate))
 
 		return orderEnable
 
@@ -264,14 +273,14 @@ class PKUVenue():
 
 		reqDict = self.__reqListToDict(reqList)
 		for orderDate in reqDict:
-			# if self.__makeOrderDay(sportsName, timeList[sportsName], courtPriorityList[sportsName], courtIndexDict[sportsName], orderDate, reqDict[orderDate]):
-			#  	self.__submitOrder()
+			if self.__makeOrderDay(sportsName, timeList[sportsName], courtPriorityList[sportsName], courtIndexDict[sportsName], orderDate, reqDict[orderDate]):
+			 	self.__submitOrder()
 			
-			for i in range(0, len(reqDict[orderDate]), 2):
-				self.browser.gotoPage(venueUrl[sportsName])
-				self.__jumpToDate(orderDate)
-				if self.__makeOrder(sportsName, timeList[sportsName], courtPriorityList[sportsName], courtIndexDict[sportsName], orderDate, reqDict[orderDate][i:i+2]):
-					self.__submitOrder()
+			# for i in range(0, len(reqDict[orderDate]), 2):
+			# 	self.browser.gotoPage(venueUrl[sportsName])
+			# 	self.__jumpToDate(orderDate)
+			# 	if self.__makeOrder(sportsName, timeList[sportsName], courtPriorityList[sportsName], courtIndexDict[sportsName], orderDate, reqDict[orderDate][i:i+2]):
+			# 		self.__submitOrder()
 
 	def outputOrderStatement(self):
 		for i in range(0, len(self.orderStatement)):
@@ -283,8 +292,8 @@ class PKUVenue():
 		self.browser.close()
 
 def main():
-	# with open("config.json", "r", encoding="utf8") as f:
-	with open("debug.json", "r", encoding="utf8") as f:
+	with open("config.json", "r", encoding="utf8") as f:
+	# with open("debug.json", "r", encoding="utf8") as f:
 		config = json.load(f)
 
 	# waiting until logintime
