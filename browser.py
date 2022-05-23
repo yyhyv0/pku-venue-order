@@ -8,8 +8,8 @@ import re
 class Browser():
     def __init__(self):
         chrome_options=Options()
-        # chrome_options.add_argument('--headless')
-        self.browser = webdriver.Chrome(chrome_options=chrome_options,executable_path="C:\Program Files (x86)\Google\Chrome\Application\chromedriver.exe")
+        chrome_options.add_argument('--headless')
+        self.browser = webdriver.Chrome(chrome_options=chrome_options,executable_path="chromedriver.exe")
 
     def sildeBarByXPath(self, xpath, slideDist):
         swiper = self.browser.find_element_by_xpath(xpath) 
